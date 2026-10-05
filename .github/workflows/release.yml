@@ -37,12 +37,12 @@ jobs:
         run: bash "ci_build_arch_${{matrix.arch}}.sh"
 
       - name: Upload JRE build output
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: 'jre8-${{matrix.arch}}'
           path: jre8-*.tar.xz
       - name: Upload JRE debuginfo build output
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: "jre8-debuginfo-${{matrix.arch}}"
           path: dizout
@@ -93,7 +93,7 @@ jobs:
           echo "Repackaged ${{ matrix.type }} 8 (${{ matrix.arch }}) successfully as $OUTPUT."
 
       - name: Upload Java 8 ${{ matrix.type }} ${{ matrix.arch }} artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: "${{ matrix.type }}-8-${{ matrix.arch }}"
           path: "${{ matrix.type }}-8-*.tar.xz"
@@ -207,7 +207,7 @@ jobs:
           echo "Created: $OUTPUT ($(du -sh $OUTPUT | cut -f1))"
 
       - name: Upload Java ${{ matrix.java }} ${{ matrix.arch }} artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: "jre-${{ matrix.java }}-${{ matrix.arch }}"
           path: "jre-${{ matrix.java }}-*.tar.xz"
