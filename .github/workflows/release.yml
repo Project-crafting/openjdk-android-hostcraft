@@ -273,7 +273,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           path: release-assets
           merge-multiple: true
