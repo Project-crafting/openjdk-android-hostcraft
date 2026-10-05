@@ -32,6 +32,19 @@ LIBJVMS=$(find "$WORK" -name libjvm.so)
 echo "libjvm.so copies found:"
 echo "$LIBJVMS" | while read -r f; do echo "  - $f ($(du -h "$f" | cut -f1))"; done
 
+# Release version up front: the binary-literal fallback below looks for
+# this exact string inside libjvm.so.
+REL=$(find "$WORK" -maxdepth 4 -name release -type f | head -1)
+RV=""
+if [ -n "$REL" ]; then
+  RV=$(grep -E '^JAVA_VERSION=' "$REL" 2>/dev/null | head -1 | cut -d'"' -f2 | tr -d '\r' | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+fi
+# Dotted prefix only ("25.0.4+8" -> "25.0.4", "1.8.0_512-..." -> "1.8.0").
+RVBIN=""
+if [ -n "$RV" ]; then
+  RVBIN=$(echo "$RV" | sed -E 's/[_+-].*$//')
+fi
+
 check_one_libjvm() {
   LIBJVM="$1"
   # 1) Architecture from the ELF header.
@@ -46,20 +59,37 @@ check_one_libjvm() {
   # 2) HotSpot major embedded in libjvm.so -> JDK major (25 maps to 8).
   # Banner shapes vary by toolchain: 64-bit builds print
   # "OpenJDK 64-Bit Server VM (17...", while 32-bit client builds print
-  # "OpenJDK Client VM (25..." with no bitness infix at all. A toolchain
-  # that folds neither into one literal is covered by the standalone
-  # HotSpot release fallback (e.g. 25.512-b00).
-  VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK( (32|64)-Bit)? (Client|Server) VM \([0-9]+' | head -1)
+  # "OpenJDK Client VM (25..." with no bitness infix at all. Toolchains
+  # that fold neither into one literal are covered by the standalone
+  # HotSpot release fallback (8u style "25.512-b00"), and finally by the
+  # exact release-version literal (modern "25.0.4" style).
+  VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK( (32|64)-Bit)? (Client|Server) VM \([0-9]+\.[0-9]+' | head -1)
   if [ -n "$VMSTR" ]; then
-    VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
+    VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+\.[0-9]+$')
+    case "$VMVER" in
+      25.[0-9][0-9][0-9]*) VMJDK=8 ;;
+      *) VMJDK=$(echo "$VMVER" | cut -d. -f1 | tr -cd '0-9') ;;
+    esac
+    VMSRC="banner"
   else
     VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+-b[0-9]+' | head -1)
-    [ -n "$VMSTR" ] || return 1
-    VMVER=$(echo "$VMSTR" | grep -oE '^[0-9]+')
+    if [ -n "$VMSTR" ]; then
+      VMVER=$(echo "$VMSTR" | grep -oE '^[0-9]+')
+      VMSRC="hotspot-release"
+    elif [ -n "$RVBIN" ] && strings -a "$LIBJVM" 2>/dev/null | grep -qF "$RVBIN"; then
+      VMSTR="release-literal $RVBIN"
+      case "$RVBIN" in
+        1.*) VMJDK=$(echo "$RVBIN" | cut -d. -f2 | tr -cd '0-9') ;;
+        *)   VMJDK=$(echo "$RVBIN" | cut -d. -f1 | tr -cd '0-9') ;;
+      esac
+      VMVER="$RVBIN"
+      VMSRC="release-literal"
+    else
+      return 1
+    fi
   fi
-  if [ "$VMVER" = "25" ]; then VMJDK=8; else VMJDK=$VMVER; fi
   [ "$VMJDK" = "$EXPECT_MAJOR" ] || return 1
-  echo "$LIBJVM :: arch=$EXPECT_ARCH vm=$VMVER jdk=$VMJDK"
+  echo "$LIBJVM :: arch=$EXPECT_ARCH vm=$VMVER jdk=$VMJDK via=$VMSRC"
   return 0
 }
 
@@ -79,17 +109,15 @@ if [ "$PASS_COUNT" -eq 0 ]; then
   echo "$FAIL_DETAIL"
   FIRST_LIB=$(echo "$LIBJVMS" | head -1)
   echo "--- version-like strings in $FIRST_LIB (excluding gHotSpotVM debug symbols): ---"
-  strings -a "$FIRST_LIB" 2>/dev/null | grep -v '^gHotSpotVM' | grep -iE 'openjdk|hotspot|server vm|client vm|java version|1\.[89]\.|^1[0-9]\.|^2[0-9]\.' | head -40
+  strings -a "$FIRST_LIB" 2>/dev/null | grep -v '^gHotSpotVM' | grep -iE 'openjdk|hotspot|server vm|client vm|java version|1\.[89]\.|^1[0-9]\.|^2[0-9]\.' | head -40 || true
+  echo "--- release version seen: ${RV:-n/a} (also checked literally above) ---"
   echo "--- (empty above = stripped or non-HotSpot binary) ---"
   exit 1
 fi
 
-# 3) `release` file consistency (when present in the package).
-REL=$(find "$WORK" -maxdepth 4 -name release -type f | head -1)
-RV="n/a"
-if [ -n "$REL" ]; then
-  RV=$(grep -E '^JAVA_VERSION=' "$REL" 2>/dev/null | head -1 | cut -d'"' -f2)
-  if [ -n "$RV" ]; then
+# 3) `release` file consistency (RV already read above for the binary check).
+RV="${RV:-n/a}"
+if [ -n "$REL" ] && [ "$RV" != "n/a" ]; then
     case "$RV" in
       1.*) RELMAJOR=$(echo "$RV" | cut -d. -f2 | cut -d. -f1 | tr -cd '0-9') ;;
       *)   RELMAJOR=$(echo "$RV" | cut -d. -f1 | tr -cd '0-9') ;;
@@ -98,7 +126,6 @@ if [ -n "$REL" ]; then
     RELMAJOR=$(echo "$RELMAJOR" | sed 's/^0*//')
     [ -z "$RELMAJOR" ] && RELMAJOR=0
     [ "$RELMAJOR" = "$EXPECT_MAJOR" ] || fail "release file says Java $RELMAJOR ($RV), expected JDK $EXPECT_MAJOR"
-  fi
 fi
 
 echo "VERIFY-OK [$TARBALL]: arch=$EXPECT_ARCH release=$RV ($PASS_COUNT libjvm validated)"
