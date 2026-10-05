@@ -220,6 +220,11 @@ jobs:
     needs: [repackage_java8_hostcraft, repackage_termux_java]
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout repository (for verifyjre.sh)
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
       - name: Download all artifacts
         uses: actions/download-artifact@v7
         with:
@@ -262,6 +267,22 @@ jobs:
             exit 1
           fi
           echo "All 15 expected JRE packages verified."
+
+      - name: Verify native identity of every JRE (arch + embedded VM major)
+        run: |
+          chmod +x verifyjre.sh
+          for ARCH in arm aarch64 x86 x86_64; do
+            ./verifyjre.sh "release-assets/jre-8-$ARCH.tar.xz" 8 "$ARCH"
+          done
+          for JAVA in 17 21 25; do
+            for ARCH in arm aarch64 x86_64; do
+              ./verifyjre.sh "release-assets/jre-$JAVA-$ARCH.tar.xz" "$JAVA" "$ARCH"
+            done
+          done
+          for JAVA in 17 21; do
+            ./verifyjre.sh "release-assets/jre-$JAVA-x86.tar.xz" "$JAVA" x86
+          done
+          echo "All JRE natives verified."
 
   # ─────────────────────────────────────────────
   # Publish all versions as a single GitHub Release

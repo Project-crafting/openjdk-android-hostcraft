@@ -73,18 +73,33 @@ cd openjdk
 
 # Apply patches
 git reset --hard
+# Patch application is FATAL on failure: a drifted patch set must never
+# silently produce an unpatched (minus Android port) tree. The old
+# `|| echo` swallowed rejections and shipped broken runtimes.
+apply_patch() {
+  local patch_file="$1"
+  local desc="$2"
+  echo "Applying $desc ($patch_file)..."
+  if ! git apply --check --whitespace=fix "$patch_file" 2>patch-check.log; then
+    echo "FATAL: patch pre-check failed for $desc — jdk8u sources drifted, refusing to build unpatched:"
+    cat patch-check.log
+    exit 1
+  fi
+  git apply --whitespace=fix "$patch_file"
+  echo "Applied $desc cleanly."
+}
 if [[ "$BUILD_IOS" != "1" ]]; then
-  git apply --reject --whitespace=fix ../patches/jdk8u_android.diff || echo "git apply failed (universal patch set)"
+  apply_patch ../patches/jdk8u_android.diff "universal patch set"
   if [[ "$TARGET_JDK" != "aarch32" ]]; then
-    git apply --reject --whitespace=fix ../patches/jdk8u_android_main.diff || echo "git apply failed (main non-universal patch set)"
+    apply_patch ../patches/jdk8u_android_main.diff "main non-universal patch set"
   else
-    git apply --reject --whitespace=fix ../patches/jdk8u_android_aarch32.diff || echo "git apply failed (aarch32 non-universal patch set)"
+    apply_patch ../patches/jdk8u_android_aarch32.diff "aarch32 non-universal patch set"
   fi
   if [[ "$TARGET_JDK" == "x86" ]]; then
-    git apply --reject --whitespace=fix ../patches/jdk8u_android_page_trap_fix.diff || echo "git apply failed (x86 page trap fix)"
+    apply_patch ../patches/jdk8u_android_page_trap_fix.diff "x86 page trap fix"
   fi
 else
-  git apply --reject --whitespace=fix ../patches/jdk8u_ios.diff || echo "git apply failed (ios patch set)"
+  apply_patch ../patches/jdk8u_ios.diff "ios patch set"
 fi
 
 #   --with-extra-cxxflags="$CXXFLAGS -Dchar16_t=uint16_t -Dchar32_t=uint32_t" \
