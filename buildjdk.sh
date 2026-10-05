@@ -88,8 +88,24 @@ apply_patch() {
   git apply --whitespace=fix "$patch_file"
   echo "Applied $desc cleanly."
 }
+# The android-config hunks (config.sub triple handling + generated-configure
+# OS mapping) differ between the jdk8u-master and aarch32-port sources, so
+# they live in per-source variants. Try master layout first, fall back to
+# the aarch32-port layout; fail if neither matches (new drift).
+apply_config_android_patch() {
+  if git apply --check --whitespace=fix ../patches/jdk8u_android_config_master.diff 2>/dev/null; then
+    apply_patch ../patches/jdk8u_android_config_master.diff "android config (jdk8u master layout)"
+  elif git apply --check --whitespace=fix ../patches/jdk8u_android_config_aarch32.diff 2>/dev/null; then
+    apply_patch ../patches/jdk8u_android_config_aarch32.diff "android config (aarch32-port layout)"
+  else
+    echo "FATAL: neither android-config patch variant applies — sources drifted:"
+    git apply --check --whitespace=fix ../patches/jdk8u_android_config_master.diff 2>&1 | head -5 || true
+    exit 1
+  fi
+}
+apply_patch ../patches/jdk8u_android.diff "universal patch set"
+apply_config_android_patch
 if [[ "$BUILD_IOS" != "1" ]]; then
-  apply_patch ../patches/jdk8u_android.diff "universal patch set"
   if [[ "$TARGET_JDK" != "aarch32" ]]; then
     apply_patch ../patches/jdk8u_android_main.diff "main non-universal patch set"
   else

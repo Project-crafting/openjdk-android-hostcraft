@@ -1,0 +1,80 @@
+diff --git a/common/autoconf/build-aux/config.sub b/common/autoconf/build-aux/config.sub
+index cc958da946..de95fc7da2 100644
+--- a/common/autoconf/build-aux/config.sub
++++ b/common/autoconf/build-aux/config.sub
+@@ -29,8 +29,9 @@
+ 
+ DIR=`dirname $0`
+ 
+-# First, filter out everything that doesn't begin with "aarch64-"
+-if ! echo $* | grep '^aarch64-' >/dev/null ; then
++# First, filter out everything that doesn't begin with "aarch64-",
++# or contain "-android" (mobile platforms pass through untouched)
++if ! echo $* | egrep "^aarch64-|-android" >/dev/null ; then
+     . $DIR/autoconf-config.sub "$@"
+     # autoconf-config.sub exits, so we never reach here, but just in
+     # case we do:
+@@ -41,6 +42,10 @@ while test $# -gt 0 ; do
+     case $1 in 
+         -- )   # Stop option processing
+             shift; break ;;
++        *-android* )
++            echo $1
++            exit
++            ;;
+         aarch64-* )
+             config=`echo $1 | sed 's/^aarch64-/arm-/'`
+             sub_args="$sub_args $config"
+diff --git a/common/autoconf/generated-configure.sh b/common/autoconf/generated-configure.sh
+index 344c31649b..49a65b45e5 100644
+--- a/common/autoconf/generated-configure.sh
++++ b/common/autoconf/generated-configure.sh
+@@ -13801,6 +13801,11 @@ test -n "$target_alias" &&
+       VAR_OS_API=posix
+       VAR_OS_ENV=solaris
+       ;;
++    *android*)
++      VAR_OS=linux
++      VAR_OS_API=posix
++      VAR_OS_ENV=linux
++      ;;
+     *darwin*)
+       VAR_OS=macosx
+       VAR_OS_API=posix
+@@ -13951,6 +13956,11 @@ $as_echo "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
+       VAR_OS_API=posix
+       VAR_OS_ENV=solaris
+       ;;
++    *android*)
++      VAR_OS=linux
++      VAR_OS_API=posix
++      VAR_OS_ENV=linux
++      ;;
+     *darwin*)
+       VAR_OS=macosx
+       VAR_OS_API=posix
+diff --git a/common/autoconf/generated-configure.sh b/common/autoconf/generated-configure.sh
+index 0dadac60..c18c9fb2 100644
+--- a/common/autoconf/generated-configure.sh
++++ b/common/autoconf/generated-configure.sh
+@@ -42322,16 +42322,16 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+   # Try to guess by grepping values from an object file.
+ 	 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+ /* end confdefs.h.  */
+-short int ascii_mm[] =
++unsigned short int ascii_mm[] =
+ 		  { 0x4249, 0x4765, 0x6E44, 0x6961, 0x6E53, 0x7953, 0 };
+-		short int ascii_ii[] =
++		unsigned short int ascii_ii[] =
+ 		  { 0x694C, 0x5454, 0x656C, 0x6E45, 0x6944, 0x6E61, 0 };
+ 		int use_ascii (int i) {
+ 		  return ascii_mm[i] + ascii_ii[i];
+ 		}
+-		short int ebcdic_ii[] =
++		unsigned short int ebcdic_ii[] =
+ 		  { 0x89D3, 0xE3E3, 0x8593, 0x95C5, 0x89C4, 0x9581, 0 };
+-		short int ebcdic_mm[] =
++		unsigned short int ebcdic_mm[] =
+ 		  { 0xC2C9, 0xC785, 0x95C4, 0x8981, 0x95E2, 0xA8E2, 0 };
+ 		int use_ebcdic (int i) {
+ 		  return ebcdic_mm[i] + ebcdic_ii[i];

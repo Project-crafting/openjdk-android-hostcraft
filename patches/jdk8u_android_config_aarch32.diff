@@ -1,0 +1,55 @@
+diff --git a/common/autoconf/build-aux/config.sub b/common/autoconf/build-aux/config.sub
+index 5ee40f43..8bed77bc 100644
+--- a/common/autoconf/build-aux/config.sub
++++ b/common/autoconf/build-aux/config.sub
+@@ -29,8 +29,9 @@
+ 
+ DIR=`dirname $0`
+ 
+-# First, filter out everything that doesn't begin with "aarch32-" or "aarch64-"
+-if ! echo $* | grep -E '^(aarch32-|aarch64-)' >/dev/null; then
++# First, filter out everything that doesn't begin with "aarch32-" or "aarch64-",
++# or contain "-android" (mobile platforms pass through untouched)
++if ! echo $* | grep -E '^(aarch32-|aarch64-)|-android' >/dev/null; then
+     . $DIR/autoconf-config.sub "$@"
+     # autoconf-config.sub exits, so we never reach here, but just in
+     # case we do:
+@@ -43,6 +44,10 @@ while test $# -gt 0; do
+     case $1 in
+         --) # Stop option processing
+             shift; break ;;
++        *-android* )
++            echo $1
++            exit
++            ;;
+         aarch32-*)
+             config=`echo $1 | sed 's/^aarch32-/arm-/'`
+             sub_args="$sub_args $config"
+diff --git a/common/autoconf/generated-configure.sh b/common/autoconf/generated-configure.sh
+index 1f8856fc..d9629ff3 100644
+--- a/common/autoconf/generated-configure.sh
++++ b/common/autoconf/generated-configure.sh
+@@ -15281,6 +15281,11 @@ test -n "$target_alias" &&
+       VAR_OS_API=posix
+       VAR_OS_ENV=solaris
+       ;;
++    *android*)
++      VAR_OS=linux
++      VAR_OS_API=posix
++      VAR_OS_ENV=linux
++      ;;
+     *darwin*)
+       VAR_OS=macosx
+       VAR_OS_API=posix
+@@ -15437,6 +15442,11 @@ printf "%s\n" "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
+       VAR_OS_API=posix
+       VAR_OS_ENV=solaris
+       ;;
++    *android*)
++      VAR_OS=linux
++      VAR_OS_API=posix
++      VAR_OS_ENV=linux
++      ;;
+     *darwin*)
+       VAR_OS=macosx
+       VAR_OS_API=posix
