@@ -37,12 +37,12 @@ jobs:
         run: bash "ci_build_arch_${{matrix.arch}}.sh"
 
       - name: Upload JRE build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: 'jre8-${{matrix.arch}}'
           path: jre8-*.tar.xz
       - name: Upload JRE debuginfo build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: "jre8-debuginfo-${{matrix.arch}}"
           path: dizout
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Get compiled ${{ matrix.type }}8-${{ matrix.arch }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7.0.1
         with:
           name: "${{ matrix.type }}8-${{ matrix.arch }}"
           path: temp_download
@@ -93,7 +93,7 @@ jobs:
           echo "Repackaged ${{ matrix.type }} 8 (${{ matrix.arch }}) successfully as $OUTPUT."
 
       - name: Upload Java 8 ${{ matrix.type }} ${{ matrix.arch }} artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: "${{ matrix.type }}-8-${{ matrix.arch }}"
           path: "${{ matrix.type }}-8-*.tar.xz"
@@ -207,22 +207,73 @@ jobs:
           echo "Created: $OUTPUT ($(du -sh $OUTPUT | cut -f1))"
 
       - name: Upload Java ${{ matrix.java }} ${{ matrix.arch }} artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: "jre-${{ matrix.java }}-${{ matrix.arch }}"
           path: "jre-${{ matrix.java }}-*.tar.xz"
+
+  # ─────────────────────────────────────────────
+  # Verify all JDK packages are built (ignore x86 for Java 25)
+  # ─────────────────────────────────────────────
+  verify_all_packages:
+    name: "Verify all JDK packages"
+    needs: [repackage_java8_hostcraft, repackage_termux_java]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7.0.1
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify all expected JRE packages exist
+        run: |
+          echo "Listing downloaded artifacts:"
+          ls -lhR release-assets/ || true
+          echo ""
+          MISSING=0
+          check_file() {
+            if ls release-assets/$1 1>/dev/null 2>&1; then
+              echo "OK: $1 found ($(du -sh release-assets/$1 | cut -f1))"
+            else
+              echo "MISSING: $1"
+              MISSING=$((MISSING+1))
+            fi
+          }
+          # Java 8 (4 arch)
+          check_file "jre-8-arm.tar.xz"
+          check_file "jre-8-aarch64.tar.xz"
+          check_file "jre-8-x86.tar.xz"
+          check_file "jre-8-x86_64.tar.xz"
+          # Java 17, 21, 25 (x86 skipped for 25)
+          for JAVA in 17 21 25; do
+            for ARCH in arm aarch64 x86_64; do
+              check_file "jre-${JAVA}-${ARCH}.tar.xz"
+            done
+            if [ "$JAVA" != "25" ]; then
+              check_file "jre-${JAVA}-x86.tar.xz"
+            else
+              echo "SKIP: jre-25-x86.tar.xz (unsupported, ignored)"
+            fi
+          done
+          echo ""
+          if [ "$MISSING" -ne 0 ]; then
+            echo "ERROR: $MISSING expected package(s) missing. Blocking release."
+            exit 1
+          fi
+          echo "All 15 expected JRE packages verified."
 
   # ─────────────────────────────────────────────
   # Publish all versions as a single GitHub Release
   # ─────────────────────────────────────────────
   publish_release:
     name: "Publish GitHub Release"
-    needs: [repackage_java8_hostcraft, repackage_termux_java]
+    needs: [verify_all_packages]
     runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7.0.1
         with:
           path: release-assets
           merge-multiple: true
