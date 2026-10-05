@@ -44,11 +44,19 @@ check_one_libjvm() {
     *) return 1 ;;
   esac
   # 2) HotSpot major embedded in libjvm.so -> JDK major (25 maps to 8).
-  # 32-bit builds report "32-Bit Client VM" (aarch32 uses the client
-  # compiler), 64-bit builds "64-Bit Server VM" — match both.
-  VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK (32|64)-Bit (Client|Server) VM \([0-9]+' | head -1)
-  [ -n "$VMSTR" ] || return 1
-  VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
+  # Banner shapes vary by toolchain: 64-bit builds print
+  # "OpenJDK 64-Bit Server VM (17...", while 32-bit client builds print
+  # "OpenJDK Client VM (25..." with no bitness infix at all. A toolchain
+  # that folds neither into one literal is covered by the standalone
+  # HotSpot release fallback (e.g. 25.512-b00).
+  VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK( (32|64)-Bit)? (Client|Server) VM \([0-9]+' | head -1)
+  if [ -n "$VMSTR" ]; then
+    VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
+  else
+    VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+-b[0-9]+' | head -1)
+    [ -n "$VMSTR" ] || return 1
+    VMVER=$(echo "$VMSTR" | grep -oE '^[0-9]+')
+  fi
   if [ "$VMVER" = "25" ]; then VMJDK=8; else VMJDK=$VMVER; fi
   [ "$VMJDK" = "$EXPECT_MAJOR" ] || return 1
   echo "$LIBJVM :: arch=$EXPECT_ARCH vm=$VMVER jdk=$VMJDK"
@@ -70,8 +78,8 @@ if [ "$PASS_COUNT" -eq 0 ]; then
   echo "VERIFY-FAIL [$TARBALL]: no usable libjvm.so (need arch=$EXPECT_ARCH, JDK=$EXPECT_MAJOR)"
   echo "$FAIL_DETAIL"
   FIRST_LIB=$(echo "$LIBJVMS" | head -1)
-  echo "--- version-like strings in $FIRST_LIB: ---"
-  strings -a "$FIRST_LIB" 2>/dev/null | grep -iE 'openjdk|hotspot|server vm|client vm|java version|1\.[89]\.|^1[0-9]\.|^2[0-9]\.' | head -20
+  echo "--- version-like strings in $FIRST_LIB (excluding gHotSpotVM debug symbols): ---"
+  strings -a "$FIRST_LIB" 2>/dev/null | grep -v '^gHotSpotVM' | grep -iE 'openjdk|hotspot|server vm|client vm|java version|1\.[89]\.|^1[0-9]\.|^2[0-9]\.' | head -40
   echo "--- (empty above = stripped or non-HotSpot binary) ---"
   exit 1
 fi
