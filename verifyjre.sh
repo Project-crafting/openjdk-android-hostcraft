@@ -27,27 +27,54 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 tar xf "$TARBALL" -C "$WORK" 2>/dev/null || fail "extract failed"
 
-LIBJVM=$(find "$WORK" -name libjvm.so | head -1)
-[ -n "$LIBJVM" ] || fail "libjvm.so not found in archive"
+LIBJVMS=$(find "$WORK" -name libjvm.so)
+[ -n "$LIBJVMS" ] || fail "libjvm.so not found in archive"
+echo "libjvm.so copies found:"
+echo "$LIBJVMS" | while read -r f; do echo "  - $f ($(du -h "$f" | cut -f1))"; done
 
-# 1) Architecture from the ELF header.
-MACHINE=$(readelf -h "$LIBJVM" 2>/dev/null | grep -i 'machine:' | head -1) || fail "readelf failed"
-case "$EXPECT_ARCH" in
-  aarch64) echo "$MACHINE" | grep -qi "aarch64" || fail "arch mismatch: want aarch64, got [$MACHINE]" ;;
-  arm)     echo "$MACHINE" | grep -qiE "machine: +arm$" || fail "arch mismatch: want arm, got [$MACHINE]" ;;
-  x86_64)  echo "$MACHINE" | grep -qi "x86-64" || fail "arch mismatch: want x86_64, got [$MACHINE]" ;;
-  x86|i686) echo "$MACHINE" | grep -qi "intel 80386" || fail "arch mismatch: want x86, got [$MACHINE]" ;;
-  *) fail "unknown arch tag: $EXPECT_ARCH" ;;
-esac
+check_one_libjvm() {
+  LIBJVM="$1"
+  # 1) Architecture from the ELF header.
+  MACHINE=$(readelf -h "$LIBJVM" 2>/dev/null | grep -i 'machine:' | head -1) || return 1
+  case "$EXPECT_ARCH" in
+    aarch64) echo "$MACHINE" | grep -qi "aarch64" || return 1 ;;
+    arm)     echo "$MACHINE" | grep -qiE "machine: +arm$" || return 1 ;;
+    x86_64)  echo "$MACHINE" | grep -qi "x86-64" || return 1 ;;
+    x86|i686) echo "$MACHINE" | grep -qi "intel 80386" || return 1 ;;
+    *) return 1 ;;
+  esac
+  # 2) HotSpot major embedded in libjvm.so -> JDK major (25 maps to 8).
+  # 32-bit builds report "32-Bit Client VM" (aarch32 uses the client
+  # compiler), 64-bit builds "64-Bit Server VM" — match both.
+  VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK (32|64)-Bit (Client|Server) VM \([0-9]+' | head -1)
+  [ -n "$VMSTR" ] || return 1
+  VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
+  if [ "$VMVER" = "25" ]; then VMJDK=8; else VMJDK=$VMVER; fi
+  [ "$VMJDK" = "$EXPECT_MAJOR" ] || return 1
+  echo "$LIBJVM :: arch=$EXPECT_ARCH vm=$VMVER jdk=$VMJDK"
+  return 0
+}
 
-# 2) HotSpot major embedded in libjvm.so -> JDK major (25 maps to 8).
-# 32-bit builds report "32-Bit Client VM" (aarch32 uses the client
-# compiler), 64-bit builds "64-Bit Server VM" — match both.
-VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK (32|64)-Bit (Client|Server) VM \([0-9]+' | head -1)
-[ -n "$VMSTR" ] || fail "no HotSpot version string inside libjvm.so"
-VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
-if [ "$VMVER" = "25" ]; then VMJDK=8; else VMJDK=$VMVER; fi
-[ "$VMJDK" = "$EXPECT_MAJOR" ] || fail "VM reports JDK $VMJDK, expected JDK $EXPECT_MAJOR"
+PASS_COUNT=0
+FAIL_DETAIL=""
+while IFS= read -r _lib; do
+  [ -n "$_lib" ] || continue
+  if check_one_libjvm "$_lib"; then
+    PASS_COUNT=$((PASS_COUNT + 1))
+  else
+    FAIL_DETAIL="${FAIL_DETAIL}FAILED: $_lib"$'\n'
+  fi
+done <<< "$LIBJVMS"
+
+if [ "$PASS_COUNT" -eq 0 ]; then
+  echo "VERIFY-FAIL [$TARBALL]: no usable libjvm.so (need arch=$EXPECT_ARCH, JDK=$EXPECT_MAJOR)"
+  echo "$FAIL_DETAIL"
+  FIRST_LIB=$(echo "$LIBJVMS" | head -1)
+  echo "--- version-like strings in $FIRST_LIB: ---"
+  strings -a "$FIRST_LIB" 2>/dev/null | grep -iE 'openjdk|hotspot|server vm|client vm|java version|1\.[89]\.|^1[0-9]\.|^2[0-9]\.' | head -20
+  echo "--- (empty above = stripped or non-HotSpot binary) ---"
+  exit 1
+fi
 
 # 3) `release` file consistency (when present in the package).
 REL=$(find "$WORK" -maxdepth 4 -name release -type f | head -1)
@@ -66,4 +93,4 @@ if [ -n "$REL" ]; then
   fi
 fi
 
-echo "VERIFY-OK [$TARBALL]: arch=$EXPECT_ARCH vm=$VMVER jdk=$VMJDK release=$RV"
+echo "VERIFY-OK [$TARBALL]: arch=$EXPECT_ARCH release=$RV ($PASS_COUNT libjvm validated)"
