@@ -41,8 +41,11 @@ case "$EXPECT_ARCH" in
 esac
 
 # 2) HotSpot major embedded in libjvm.so -> JDK major (25 maps to 8).
-VMVER=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK 64-Bit Server VM \([0-9]+' | head -1 | grep -oE '[0-9]+$')
-[ -n "$VMVER" ] || fail "no HotSpot version string inside libjvm.so"
+# 32-bit builds report "32-Bit Client VM" (aarch32 uses the client
+# compiler), 64-bit builds "64-Bit Server VM" — match both.
+VMSTR=$(strings -a "$LIBJVM" 2>/dev/null | grep -oE 'OpenJDK (32|64)-Bit (Client|Server) VM \([0-9]+' | head -1)
+[ -n "$VMSTR" ] || fail "no HotSpot version string inside libjvm.so"
+VMVER=$(echo "$VMSTR" | grep -oE '[0-9]+$')
 if [ "$VMVER" = "25" ]; then VMJDK=8; else VMJDK=$VMVER; fi
 [ "$VMJDK" = "$EXPECT_MAJOR" ] || fail "VM reports JDK $VMJDK, expected JDK $EXPECT_MAJOR"
 
