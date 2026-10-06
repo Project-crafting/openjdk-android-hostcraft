@@ -115,6 +115,11 @@ export AR=$TOOLCHAIN/bin/llvm-ar
 export AS=$TOOLCHAIN/bin/llvm-as
 export CC=$PWD/android-wrapped-clang
 export CXX=$PWD/android-wrapped-clang++
+# HOST_CC pins build-machine probes (notably config.guess, which asks $CC
+# for its default ABI) to the real host compiler. Without it, x86 jobs
+# misdetect BUILD as i686 (our CC wrapper defaults to a 32-bit ABI),
+# poisoning every HOST build-tools define. jdk8 flow untouched.
+export HOST_CC=gcc
 export LD=$TOOLCHAIN/bin/ld
 export OBJCOPY=$TOOLCHAIN/bin/llvm-objcopy
 export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
