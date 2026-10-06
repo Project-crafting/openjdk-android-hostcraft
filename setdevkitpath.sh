@@ -99,8 +99,16 @@ export ANDROID_INCLUDE=$TOOLCHAIN/sysroot/usr/include
 export CPPFLAGS="-I$ANDROID_INCLUDE -I$ANDROID_INCLUDE/$TARGET"
 export LDFLAGS="-L$NDK/platforms/android-$API/arch-$TARGET_SHORT/usr/lib -lstdc++ -lc++abi"
 
-export thecc=$TOOLCHAIN/bin/${TARGET}${API}-clang
-export thecxx=$TOOLCHAIN/bin/${TARGET}${API}-clang++
+# NDK clang ships no arm-linux-androideabi<API>-clang wrapper — 32-bit ARM is
+# armv7a-linux-androideabi<API>-clang (FCL uses the armv7a triple directly).
+# $TARGET itself stays arm-linux-androideabi for the sysroot include dir and
+# --openjdk-target; only the compiler wrappers are remapped.
+case "$TARGET" in
+  arm-linux-androideabi) CLANG_TARGET=armv7a-linux-androideabi ;;
+  *) CLANG_TARGET=$TARGET ;;
+esac
+export thecc=$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang
+export thecxx=$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang++
 
 # Configure and build.
 export AR=$TOOLCHAIN/bin/llvm-ar
