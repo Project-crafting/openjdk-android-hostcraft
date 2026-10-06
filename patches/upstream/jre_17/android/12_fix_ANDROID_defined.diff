@@ -1,0 +1,17 @@
+// Ensure `ANDROID` is defined
+
+diff --git a/src/hotspot/share/utilities/globalDefinitions_gcc.hpp b/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
+index 30cca9ee7..896690c9a 100644
+--- a/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
++++ b/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
+@@ -48,6 +48,10 @@
+ #include <limits.h>
+ #include <errno.h>
+ 
++#if defined(__ANDROID__) && !defined(ANDROID)
++#define ANDROID 1
++#endif
++
+ #if defined(LINUX) || defined(_ALLBSD_SOURCE)
+ #include <inttypes.h>
+ #include <signal.h>

@@ -1,0 +1,21 @@
+// Implement the thread helper function on android
+
+diff --git a/src/hotspot/os_cpu/linux_aarch64/thread_linux_aarch64.hpp b/src/hotspot/os_cpu/linux_aarch64/thread_linux_aarch64.hpp
+index 5a1f273c5..88b6750db 100644
+--- a/src/hotspot/os_cpu/linux_aarch64/thread_linux_aarch64.hpp
++++ b/src/hotspot/os_cpu/linux_aarch64/thread_linux_aarch64.hpp
+@@ -47,6 +47,13 @@ private:
+   bool pd_get_top_frame(frame* fr_addr, void* ucontext, bool isInJava);
+ public:
+ 
+-  static Thread *aarch64_get_thread_helper();
++  static Thread *aarch64_get_thread_helper()
++#ifndef __ANDROID__
++;
++#else
++  {
++    return Thread::current();
++  }
++#endif
+ 
+ #endif // OS_CPU_LINUX_AARCH64_THREAD_LINUX_AARCH64_HPP

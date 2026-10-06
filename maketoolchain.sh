@@ -3,6 +3,7 @@ set -e
 
 . setdevkitpath.sh
 
+if [[ "${JDK_MAJOR:-8}" == "8" ]]; then
 mkdir -p $NDK/generated-toolchains/android-${TARGET_SHORT}-toolchain
 pushd $NDK/generated-toolchains/android-${TARGET_SHORT}-toolchain
 
@@ -20,3 +21,15 @@ rm sysroot/usr/lib/libstdc++.so
 popd
 
 cp devkit.info.${TARGET_SHORT} $NDK/generated-toolchains/android-${TARGET_SHORT}-toolchain/
+else
+# Modern JDKs (17/21/25): stock NDK from Google (Pojav/FCL pattern), plus the
+# wrapped-clang shims as executable. No Mojo gcc toolchain involved.
+if [ ! -d "$NDK" ]; then
+  echo "Downloading Android NDK $NDK_VERSION ..."
+  wget -nc -nv -O android-ndk-$NDK_VERSION-linux.zip "https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip"
+  unzip -q android-ndk-$NDK_VERSION-linux.zip
+fi
+[ -d "$NDK" ] || { echo "FATAL: NDK directory $NDK missing after download"; exit 1; }
+chmod +x android-wrapped-clang android-wrapped-clang++
+cp devkit.info.${TARGET_SHORT} "$TOOLCHAIN"/ 2>/dev/null || true
+fi

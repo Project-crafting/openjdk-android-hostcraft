@@ -100,10 +100,11 @@ jobs:
 
 
   # ─────────────────────────────────────────────
-  # Java 17, 21, 25 – repackaged from Termux
+  # Java 17, 21, 25 – built from source (self-contained JREs, no Termux
+  # sibling libs at runtime). Replaces the old Termux-deb repackaging.
   # ─────────────────────────────────────────────
-  repackage_termux_java:
-    name: "Repackage Java ${{ matrix.java }} (${{ matrix.arch }})"
+  build_openjdk_modern:
+    name: "Build OpenJDK ${{ matrix.java }} from source (${{ matrix.arch }})"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -113,111 +114,78 @@ jobs:
         exclude:
           - java: 25
             arch: "x86"
-
     steps:
-      - name: Download Termux openjdk-${{ matrix.java }} .deb (${{ matrix.arch }})
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up boot JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java == 25 && 24 || matrix.java }}
+          distribution: temurin
+      - name: Install build dependencies
         run: |
-          if [ "${{ matrix.arch }}" = "aarch32" ]; then
-            TERMUX_ARCH="arm"
-          elif [ "${{ matrix.arch }}" = "aarch64" ]; then
-            TERMUX_ARCH="aarch64"
-          elif [ "${{ matrix.arch }}" = "x86" ]; then
-            TERMUX_ARCH="i686"
-          elif [ "${{ matrix.arch }}" = "x86_64" ]; then
-            TERMUX_ARCH="x86_64"
-          fi
+          sudo apt update
+          sudo apt -y install autoconf cmake ninja-build python3 python-is-python3 unzip zip systemtap-sdt-dev gcc-multilib g++-multilib libxtst-dev libasound2-dev libelf-dev libfontconfig1-dev libx11-dev libxext-dev libxrandr-dev libxrender-dev libxt-dev
+      - name: Build with CI build script
+        env:
+          JDK_MAJOR: ${{ matrix.java }}
+        run: bash "ci_build_arch_${{matrix.arch}}.sh"
 
-          REPO="https://packages.termux.dev/apt/termux-main"
-          PACKAGES_URL="$REPO/dists/stable/main/binary-$TERMUX_ARCH/Packages"
-          echo "Fetching Packages index from $PACKAGES_URL..."
-          curl -fsSL "$PACKAGES_URL" -o Packages
+      - name: Upload JRE build output
+        uses: actions/upload-artifact@v7
+        with:
+          name: 'jre-src-${{matrix.java}}-${{matrix.arch}}'
+          path: jre${{matrix.java}}-*.tar.xz
+      - name: Upload JRE debuginfo build output
+        uses: actions/upload-artifact@v7
+        with:
+          name: "jre-src-debuginfo-${{matrix.java}}-${{matrix.arch}}"
+          path: dizout
 
-          PKG="openjdk-${{ matrix.java }}"
-          FILENAME=$(awk -v pkg="$PKG" '
-            /^Package:/ { inpkg = ($2 == pkg) }
-            /^Filename:/ && inpkg { print $2; exit }
-          ' Packages)
+  # ─────────────────────────────────────────────
+  # Java 17/21/25 HostCraft structure repack (source-built JREs)
+  # ─────────────────────────────────────────────
+  repackage_modern_hostcraft:
+    name: "Repackage Java ${{ matrix.java }} HostCraft (${{ matrix.arch }})"
+    needs: build_openjdk_modern
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [ 17, 21, 25 ]
+        arch: [ "aarch32", "aarch64", "x86", "x86_64" ]
+        exclude:
+          - java: 25
+            arch: "x86"
+    steps:
+      - name: Checkout repository (for repack script)
+        uses: actions/checkout@v4
+      - name: Get compiled jre${{ matrix.java }}-${{ matrix.arch }}
+        uses: actions/download-artifact@v7
+        with:
+          name: "jre-src-${{matrix.java}}-${{matrix.arch}}"
+          path: temp_download
 
-          if [ -z "$FILENAME" ]; then
-            echo "ERROR: Package $PKG not found in Termux repository for $TERMUX_ARCH!"
-            exit 1
-          fi
-
-          echo "Downloading: $REPO/$FILENAME"
-          curl -fsSL "$REPO/$FILENAME" -o package.deb
-          echo "Downloaded $(du -sh package.deb | cut -f1)"
-
-      - name: Extract .deb and repackage as tar.xz
+      - name: Repackage source-built JRE into java-XX-openjdk structure
+        env:
+          JDK_MAJOR: ${{ matrix.java }}
         run: |
-          mkdir -p extracted
-          cd extracted
-          ar x ../package.deb
-          DATA=$(ls data.tar.* 2>/dev/null | head -1)
-          if [ -z "$DATA" ]; then
-            echo "ERROR: No data.tar.* found in .deb"
-            ls -la
-            exit 1
-          fi
-          echo "Extracting $DATA..."
-          tar xf "$DATA"
-          cd ..
-
-          JVM_DIR="java-${{ matrix.java }}-openjdk"
-
-          # Find the jvm directory inside the extracted content
-          JVM_SRC=$(find extracted -type d -name "$JVM_DIR" 2>/dev/null | head -1)
-          if [ -z "$JVM_SRC" ]; then
-            echo "ERROR: $JVM_DIR not found in extracted content"
-            find extracted -type d | head -40
-            exit 1
-          fi
-          echo "Found JVM at: $JVM_SRC"
-
-          # Build output structure: java-XX-openjdk/
-          mkdir -p repack
-          cp -a "$JVM_SRC" "repack/$JVM_DIR"
-
-          # Strip JDK-specific development tools and source files to make a lightweight JRE
-          JVM_DEST="repack/$JVM_DIR"
-          rm -rf "$JVM_DEST/lib/src.zip"
-          rm -f "$JVM_DEST"/bin/javac \
-                "$JVM_DEST"/bin/javap \
-                "$JVM_DEST"/bin/javadoc \
-                "$JVM_DEST"/bin/jshell \
-                "$JVM_DEST"/bin/jlink \
-                "$JVM_DEST"/bin/jmod \
-                "$JVM_DEST"/bin/jdb \
-                "$JVM_DEST"/bin/jcmd \
-                "$JVM_DEST"/bin/jinfo \
-                "$JVM_DEST"/bin/jmap \
-                "$JVM_DEST"/bin/jps \
-                "$JVM_DEST"/bin/jstack \
-                "$JVM_DEST"/bin/jstat \
-                "$JVM_DEST"/bin/jar \
-                "$JVM_DEST"/bin/jarsigner
-
-          if [ "${{ matrix.arch }}" = "aarch32" ]; then
-            ARCH_NAME="arm"
-          else
-            ARCH_NAME="${{ matrix.arch }}"
-          fi
-
-          OUTPUT="jre-${{ matrix.java }}-$ARCH_NAME.tar.xz"
-          tar -cJf "$OUTPUT" -C repack .
-          echo "Created: $OUTPUT ($(du -sh $OUTPUT | cut -f1))"
+          chmod +x repackjre-modern.sh
+          ./repackjre-modern.sh temp_download repack-out
+          ls -lh repack-out/
 
       - name: Upload Java ${{ matrix.java }} ${{ matrix.arch }} artifact
         uses: actions/upload-artifact@v7
         with:
-          name: "jre-${{ matrix.java }}-${{ matrix.arch }}"
-          path: "jre-${{ matrix.java }}-*.tar.xz"
+          name: "jre-${{matrix.java}}-${{matrix.arch}}"
+          path: "repack-out/jre-*.tar.xz"
 
   # ─────────────────────────────────────────────
   # Verify all JDK packages are built (ignore x86 for Java 25)
   # ─────────────────────────────────────────────
   verify_all_packages:
     name: "Verify all JDK packages"
-    needs: [repackage_java8_hostcraft, repackage_termux_java]
+    needs: [repackage_java8_hostcraft, repackage_modern_hostcraft]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository (for verifyjre.sh)
@@ -326,17 +294,17 @@ jobs:
             | Java 8  | `arm` (aarch32) | `jre-8-arm.tar.xz` | JRE | Built from [openjdk/aarch32-port-jdk8u](https://github.com/openjdk/aarch32-port-jdk8u) |
             | Java 8  | `x86` | `jre-8-x86.tar.xz` | JRE | Built from [openjdk/jdk8u](https://github.com/openjdk/jdk8u) |
             | Java 8  | `x86_64` | `jre-8-x86_64.tar.xz` | JRE | Built from [openjdk/jdk8u](https://github.com/openjdk/jdk8u) |
-            | Java 17 | `aarch64` | `jre-17-aarch64.tar.xz` | JRE | Repackaged Termux `openjdk-17` |
-            | Java 17 | `arm` (aarch32) | `jre-17-arm.tar.xz` | JRE | Repackaged Termux `openjdk-17` |
-            | Java 17 | `x86` | `jre-17-x86.tar.xz` | JRE | Repackaged Termux `openjdk-17` |
-            | Java 17 | `x86_64` | `jre-17-x86_64.tar.xz` | JRE | Repackaged Termux `openjdk-17` |
-            | Java 21 | `aarch64` | `jre-21-aarch64.tar.xz` | JRE | Repackaged Termux `openjdk-21` |
-            | Java 21 | `arm` (aarch32) | `jre-21-arm.tar.xz` | JRE | Repackaged Termux `openjdk-21` |
-            | Java 21 | `x86` | `jre-21-x86.tar.xz` | JRE | Repackaged Termux `openjdk-21` |
-            | Java 21 | `x86_64` | `jre-21-x86_64.tar.xz` | JRE | Repackaged Termux `openjdk-21` |
-            | Java 25 | `aarch64` | `jre-25-aarch64.tar.xz` | JRE | Repackaged Termux `openjdk-25` |
-            | Java 25 | `arm` (aarch32) | `jre-25-arm.tar.xz` | JRE | Repackaged Termux `openjdk-25` |
-            | Java 25 | `x86_64` | `jre-25-x86_64.tar.xz` | JRE | Repackaged Termux `openjdk-25` |
+            | Java 17 | `aarch64` | `jre-17-aarch64.tar.xz` | JRE | Built from [openjdk/jdk17u](https://github.com/openjdk/jdk17u) |
+            | Java 17 | `arm` (aarch32) | `jre-17-arm.tar.xz` | JRE | Built from [openjdk/jdk17u](https://github.com/openjdk/jdk17u) |
+            | Java 17 | `x86` | `jre-17-x86.tar.xz` | JRE | Built from [openjdk/jdk17u](https://github.com/openjdk/jdk17u) |
+            | Java 17 | `x86_64` | `jre-17-x86_64.tar.xz` | JRE | Built from [openjdk/jdk17u](https://github.com/openjdk/jdk17u) |
+            | Java 21 | `aarch64` | `jre-21-aarch64.tar.xz` | JRE | Built from [openjdk/jdk21u](https://github.com/openjdk/jdk21u) |
+            | Java 21 | `arm` (aarch32) | `jre-21-arm.tar.xz` | JRE | Built from [openjdk/jdk21u](https://github.com/openjdk/jdk21u) |
+            | Java 21 | `x86` | `jre-21-x86.tar.xz` | JRE | Built from [openjdk/jdk21u](https://github.com/openjdk/jdk21u) |
+            | Java 21 | `x86_64` | `jre-21-x86_64.tar.xz` | JRE | Built from [openjdk/jdk21u](https://github.com/openjdk/jdk21u) |
+            | Java 25 | `aarch64` | `jre-25-aarch64.tar.xz` | JRE | Built from [openjdk/jdk25u](https://github.com/openjdk/jdk25u) |
+            | Java 25 | `arm` (aarch32) | `jre-25-arm.tar.xz` | JRE | Built from [openjdk/jdk25u](https://github.com/openjdk/jdk25u) |
+            | Java 25 | `x86_64` | `jre-25-x86_64.tar.xz` | JRE | Built from [openjdk/jdk25u](https://github.com/openjdk/jdk25u) |
 
 
             ### How HostCraft JRE archives extract

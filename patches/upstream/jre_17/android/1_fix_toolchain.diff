@@ -1,0 +1,361 @@
+// This patch does a few things:
+// - allow clang as an accepted compiler
+// - allow android as an accepted target
+// - forces the use of the PIC flag
+// - Surely other things
+diff --git a/make/autoconf/build-aux/config.sub b/make/autoconf/build-aux/config.sub
+index 8f5a5cf52..34943b6ed 100644
+--- a/make/autoconf/build-aux/config.sub
++++ b/make/autoconf/build-aux/config.sub
+@@ -47,7 +47,8 @@ if echo $* | grep pc-msys >/dev/null ; then
+ fi
+ 
+ # Filter out everything that doesn't begin with "aarch64-"
+-if ! echo $* | grep '^aarch64-' >/dev/null ; then
++# or that ends with "-android"
++if ! echo $* | egrep "^aarch64-|-android" >/dev/null ; then
+     . $DIR/autoconf-config.sub "$@"
+     # autoconf-config.sub exits, so we never reach here, but just in
+     # case we do:
+@@ -58,6 +59,10 @@ while test $# -gt 0 ; do
+     case $1 in
+         -- )   # Stop option processing
+             shift; break ;;
++        *-android* )
++            echo $1
++            exit
++            ;;
+         aarch64-* )
+             config=`echo $1 | sed 's/^aarch64-/arm-/'`
+             sub_args="$sub_args $config"
+diff --git a/make/autoconf/flags-cflags.m4 b/make/autoconf/flags-cflags.m4
+index 5eed1138f..b4319de67 100644
+--- a/make/autoconf/flags-cflags.m4
++++ b/make/autoconf/flags-cflags.m4
+@@ -374,7 +374,8 @@ AC_DEFUN([FLAGS_SETUP_CFLAGS_HELPER],
+   #### OS DEFINES, these should be independent on toolchain
+   if test "x$OPENJDK_TARGET_OS" = xlinux; then
+     CFLAGS_OS_DEF_JVM="-DLINUX -D_FILE_OFFSET_BITS=64"
+-    CFLAGS_OS_DEF_JDK="-D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE"
++    # CFLAGS_OS_DEF_JDK="-D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE"
++    CFLAGS_OS_DEF_JDK="-D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE -D__USE_BSD"
+   elif test "x$OPENJDK_TARGET_OS" = xmacosx; then
+     CFLAGS_OS_DEF_JVM="-D_ALLBSD_SOURCE -D_DARWIN_C_SOURCE -D_XOPEN_SOURCE"
+     CFLAGS_OS_DEF_JDK="-D_ALLBSD_SOURCE -D_DARWIN_UNLIMITED_SELECT"
+diff --git a/make/autoconf/flags-ldflags.m4 b/make/autoconf/flags-ldflags.m4
+index 23bb33e87..ad0ab88d0 100644
+--- a/make/autoconf/flags-ldflags.m4
++++ b/make/autoconf/flags-ldflags.m4
+@@ -179,7 +179,9 @@ AC_DEFUN([FLAGS_SETUP_LDFLAGS_CPU_DEP],
+        test "x${OPENJDK_$1_CPU}" = xmips64el; then
+       $1_CPU_LDFLAGS="${$1_CPU_LDFLAGS} -Wl,--hash-style=sysv"
+     else
+-      $1_CPU_LDFLAGS="${$1_CPU_LDFLAGS} -Wl,--hash-style=gnu"
++      # Android 5.x does not support GNU hash style
++      # gnu
++      $1_CPU_LDFLAGS="${$1_CPU_LDFLAGS} -Wl,--hash-style=sysv"
+     fi
+ 
+   elif test "x$TOOLCHAIN_TYPE" = xmicrosoft; then
+diff --git a/make/autoconf/lib-freetype.m4 b/make/autoconf/lib-freetype.m4
+index 6a7109342..2d74ffc5b 100644
+--- a/make/autoconf/lib-freetype.m4
++++ b/make/autoconf/lib-freetype.m4
+@@ -103,7 +103,8 @@ AC_DEFUN_ONCE([LIB_SETUP_FREETYPE],
+   FREETYPE_TO_USE=bundled
+   if test "x$OPENJDK_TARGET_OS" != "xwindows" && \
+       test "x$OPENJDK_TARGET_OS" != "xmacosx" && \
+-      test "x$OPENJDK_TARGET_OS" != "xaix"; then
++      test "x$OPENJDK_TARGET_OS" != "xaix" && \
++      test "x$OPENJDK_TARGET_OS" != "xandroid"; then
+     FREETYPE_TO_USE=system
+   fi
+   if test "x$with_freetype" != "x" ; then
+diff --git a/make/autoconf/libraries.m4 b/make/autoconf/libraries.m4
+index a65d91ee9..961f57db9 100644
+--- a/make/autoconf/libraries.m4
++++ b/make/autoconf/libraries.m4
+@@ -40,8 +40,8 @@ m4_include([lib-tests.m4])
+ AC_DEFUN_ONCE([LIB_DETERMINE_DEPENDENCIES],
+ [
+   # Check if X11 is needed
+-  if test "x$OPENJDK_TARGET_OS" = xwindows || test "x$OPENJDK_TARGET_OS" = xmacosx; then
+-    # No X11 support on windows or macosx
++  if test "x$OPENJDK_TARGET_OS" = xwindows || test "x$OPENJDK_TARGET_OS" = xmacosx || test "x$OPENJDK_TARGET_OS" = xandroid; then
++    # No X11 support on windows, macosx or android
+     NEEDS_LIB_X11=false
+   elif test "x$ENABLE_HEADLESS_ONLY" = xtrue; then
+     # No X11 support needed when building headless only
+@@ -52,8 +52,8 @@ AC_DEFUN_ONCE([LIB_DETERMINE_DEPENDENCIES],
+   fi
+ 
+   # Check if fontconfig is needed
+-  if test "x$OPENJDK_TARGET_OS" = xwindows || test "x$OPENJDK_TARGET_OS" = xmacosx; then
+-    # No fontconfig support on windows or macosx
++  if test "x$OPENJDK_TARGET_OS" = xwindows || test "x$OPENJDK_TARGET_OS" = xmacosx || test "x$OPENJDK_TARGET_OS" = xandroid; then
++    # No fontconfig support on windows, macosx or android
+     NEEDS_LIB_FONTCONFIG=false
+   else
+     # All other instances need fontconfig, even if building headless only,
+diff --git a/make/autoconf/platform.m4 b/make/autoconf/platform.m4
+index 2dd13d0d5..ea06c46a7 100644
+--- a/make/autoconf/platform.m4
++++ b/make/autoconf/platform.m4
+@@ -190,6 +190,10 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_OS],
+       VAR_OS=linux
+       VAR_OS_TYPE=unix
+       ;;
++    *android*)
++      VAR_OS=linux
++      VAR_OS_TYPE=unix
++      ;;
+     *darwin*)
+       VAR_OS=macosx
+       VAR_OS_TYPE=unix
+diff --git a/make/autoconf/toolchain.m4 b/make/autoconf/toolchain.m4
+index 788958880..5dc9ade78 100644
+--- a/make/autoconf/toolchain.m4
++++ b/make/autoconf/toolchain.m4
+@@ -35,10 +35,10 @@
+ m4_include([toolchain_microsoft.m4])
+ 
+ # All valid toolchains, regardless of platform (used by help.m4)
+-VALID_TOOLCHAINS_all="gcc clang xlc microsoft"
++VALID_TOOLCHAINS_all="clang gcc xlc microsoft"
+ 
+ # These toolchains are valid on different platforms
+-VALID_TOOLCHAINS_linux="gcc clang"
++VALID_TOOLCHAINS_linux="clang gcc"
+ VALID_TOOLCHAINS_macosx="gcc clang"
+ VALID_TOOLCHAINS_aix="xlc"
+ VALID_TOOLCHAINS_windows="microsoft"
+@@ -899,8 +899,8 @@ AC_DEFUN_ONCE([TOOLCHAIN_SETUP_BUILD_COMPILERS],
+         UTIL_REQUIRE_PROGS(BUILD_CC, clang cc gcc)
+         UTIL_REQUIRE_PROGS(BUILD_CXX, clang++ CC g++)
+       else
+-        UTIL_REQUIRE_PROGS(BUILD_CC, cc gcc)
+-        UTIL_REQUIRE_PROGS(BUILD_CXX, CC g++)
++        UTIL_REQUIRE_PROGS(BUILD_CC, clang cc gcc)
++        UTIL_REQUIRE_PROGS(BUILD_CXX, clang++ CC g++)
+       fi
+       UTIL_LOOKUP_PROGS(BUILD_NM, nm gcc-nm)
+       UTIL_LOOKUP_PROGS(BUILD_AR, ar gcc-ar lib)
+@@ -915,11 +915,14 @@ AC_DEFUN_ONCE([TOOLCHAIN_SETUP_BUILD_COMPILERS],
+ 
+     PATH="$OLDPATH"
+ 
+-    TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CC, [BuildC])
+-    TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CXX, [BuildC++])
+-    TOOLCHAIN_PREPARE_FOR_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_], [build ])
+-    TOOLCHAIN_EXTRACT_LD_VERSION(BUILD_LD, [build linker])
+-    TOOLCHAIN_PREPARE_FOR_LD_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_])
++    # xandroid
++    if test "x$OPENJDK_BUILD_OS" != "xlinux"; then
++      TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CC, [BuildC])
++      TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CXX, [BuildC++])
++      TOOLCHAIN_PREPARE_FOR_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_], [build ])
++      TOOLCHAIN_EXTRACT_LD_VERSION(BUILD_LD, [build linker])
++      TOOLCHAIN_PREPARE_FOR_LD_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_])
++    fi
+   else
+     # If we are not cross compiling, use the normal target compilers for
+     # building the build platform executables.
+diff --git a/make/common/JdkNativeCompilation.gmk b/make/common/JdkNativeCompilation.gmk
+index 6a963ac2c..349ff126b 100644
+--- a/make/common/JdkNativeCompilation.gmk
++++ b/make/common/JdkNativeCompilation.gmk
+@@ -41,6 +41,12 @@ FindSrcDirsForLib += \
+       $(TOPDIR)/src/$(strip $1)/$(OPENJDK_TARGET_OS_TYPE)/native/lib$(strip $2) \
+       $(TOPDIR)/src/$(strip $1)/share/native/lib$(strip $2)))
+ 
++ifeq ($(OPENJDK_TARGET_OS), android)
++  FindSrcDirsForLib += \
++    $(call uniq, $(wildcard \
++        $(TOPDIR)/src/$(strip $1)/linux/native/lib$(strip $2)))
++endif
++
+ FindSrcDirsForComponent += \
+   $(call uniq, $(wildcard \
+       $(TOPDIR)/src/$(strip $1)/$(OPENJDK_TARGET_OS)/native/$(strip $2) \
+diff --git a/make/common/Modules.gmk b/make/common/Modules.gmk
+index 0eb0fb2dd..e0431de0b 100644
+--- a/make/common/Modules.gmk
++++ b/make/common/Modules.gmk
+@@ -83,6 +83,10 @@ GENERATED_SRC_DIRS += \
+ TOP_SRC_DIRS += \
+     $(TOPDIR)/src \
+     #
++ifeq ($(OPENJDK_TARGET_OS), android)
++  SRC_SUBDIRS += linux/classes
++endif
++
+ 
+ SRC_SUBDIRS += $(OPENJDK_TARGET_OS)/classes
+ ifneq ($(OPENJDK_TARGET_OS), $(OPENJDK_TARGET_OS_TYPE))
+diff --git a/make/common/Utils.gmk b/make/common/Utils.gmk
+index a7df32065..0eaa1ec40 100644
+--- a/make/common/Utils.gmk
++++ b/make/common/Utils.gmk
+@@ -307,6 +307,12 @@ check-jvm-variant = \
+ isTargetOs = \
+   $(strip $(if $(filter $(OPENJDK_TARGET_OS), $1), true, false))
+ 
++ifeq ($(call isTargetOs, android), true)
++  # PATCH: Since Android is Linux, so Linux specific things are also built for Android.
++  isTargetOs = \
++    $(strip $(if $(filter $(OPENJDK_TARGET_OS), $1), true, $(if $(filter linux, $1), true, false)))
++endif
++
+ isTargetOsType = \
+   $(strip $(if $(filter $(OPENJDK_TARGET_OS_TYPE), $1), true, false))
+ 
+diff --git a/make/hotspot/lib/JvmMapfile.gmk b/make/hotspot/lib/JvmMapfile.gmk
+index 5cba93178..181e0db5c 100644
+--- a/make/hotspot/lib/JvmMapfile.gmk
++++ b/make/hotspot/lib/JvmMapfile.gmk
+@@ -52,7 +52,7 @@ endif
+ # Create a dynamic list of symbols from the built object files. This is highly
+ # platform dependent.
+ 
+-ifeq ($(call isTargetOs, linux), true)
++ifeq ($(call isTargetOs, android linux), true)
+   DUMP_SYMBOLS_CMD := $(NM) --defined-only *.o
+   ifneq ($(FILTER_SYMBOLS_PATTERN), )
+     FILTER_SYMBOLS_PATTERN := $(FILTER_SYMBOLS_PATTERN)|
+diff --git a/make/hotspot/lib/JvmOverrideFiles.gmk b/make/hotspot/lib/JvmOverrideFiles.gmk
+index a9f8a0e54..c2fd95850 100644
+--- a/make/hotspot/lib/JvmOverrideFiles.gmk
++++ b/make/hotspot/lib/JvmOverrideFiles.gmk
+@@ -65,7 +65,8 @@ ifeq ($(call isTargetOs, linux), true)
+ 	#
+   endif
+ 
+-  ifeq ($(call isTargetCpu, x86), true)
++  #ifeq ($(call isTargetCpu, x86), true)
++  ifeq (false, true)
+     # Performance measurements show that by compiling GC related code, we could
+     # significantly reduce the GC pause time on 32 bit Linux/Unix platforms by
+     # compiling without the PIC flag (-fPIC on linux).
+diff --git a/make/modules/java.base/lib/CoreLibraries.gmk b/make/modules/java.base/lib/CoreLibraries.gmk
+index 1d5fede2a..37624ce84 100644
+--- a/make/modules/java.base/lib/CoreLibraries.gmk
++++ b/make/modules/java.base/lib/CoreLibraries.gmk
+@@ -112,6 +112,10 @@ $(eval $(call SetupJdkLibrary, BUILD_LIBJAVA, \
+ 
+ TARGETS += $(BUILD_LIBJAVA)
+ 
++ifeq ($(OPENJDK_TARGET_OS), linux)
++  $(BUILD_LIBJAVA): $(BUILD_LIBTINYICONV)
++endif
++
+ $(BUILD_LIBJAVA): $(BUILD_LIBVERIFY)
+ 
+ $(BUILD_LIBJAVA): $(BUILD_LIBFDLIBM)
+diff --git a/make/modules/java.desktop/Lib.gmk b/make/modules/java.desktop/Lib.gmk
+index 22b07289a..7281c96b9 100644
+--- a/make/modules/java.desktop/Lib.gmk
++++ b/make/modules/java.desktop/Lib.gmk
+@@ -76,7 +76,7 @@ ifeq ($(call isTargetOs, aix), false)
+ 
+   $(BUILD_LIBJSOUND): $(call FindLib, java.base, java)
+ 
+-  TARGETS += $(BUILD_LIBJSOUND)
++  # TARGETS += $(BUILD_LIBJSOUND)
+ 
+ endif
+ 
+diff --git a/make/modules/java.desktop/lib/Awt2dLibraries.gmk b/make/modules/java.desktop/lib/Awt2dLibraries.gmk
+index 4d0c0c00d..0bd1b5063 100644
+--- a/make/modules/java.desktop/lib/Awt2dLibraries.gmk
++++ b/make/modules/java.desktop/lib/Awt2dLibraries.gmk
+@@ -527,7 +527,7 @@ $(eval $(call SetupJdkLibrary, BUILD_LIBFONTMANAGER, \
+     LDFLAGS_unix := -L$(INSTALL_LIBRARIES_HERE), \
+     LDFLAGS_aix := -Wl$(COMMA)-berok, \
+     LIBS := $(BUILD_LIBFONTMANAGER_FONTLIB), \
+-    LIBS_unix := -lawt -ljava -ljvm $(LIBM) $(LIBCXX), \
++    LIBS_unix := -lawt -lawt_headless -ljava -ljvm $(LIBM) $(LIBCXX), \
+     LIBS_macosx := -lawt_lwawt -framework CoreText -framework CoreFoundation -framework CoreGraphics, \
+     LIBS_windows := $(WIN_JAVA_LIB) advapi32.lib user32.lib gdi32.lib \
+         $(WIN_AWT_LIB), \
+@@ -753,7 +753,7 @@ ifeq ($(ENABLE_HEADLESS_ONLY), false)
+       LIBS_aix := -liconv, \
+   ))
+ 
+-  TARGETS += $(BUILD_LIBSPLASHSCREEN)
++  # TARGETS += $(BUILD_LIBSPLASHSCREEN)
+ 
+   ifeq ($(call isTargetOs, macosx), true)
+     $(BUILD_LIBSPLASHSCREEN): $(call FindLib, $(MODULE), osxapp)
+diff --git a/make/modules/java.instrument/Lib.gmk b/make/modules/java.instrument/Lib.gmk
+index 3996ad213..bba075e69 100644
+--- a/make/modules/java.instrument/Lib.gmk
++++ b/make/modules/java.instrument/Lib.gmk
+@@ -36,9 +36,11 @@ endif
+ $(eval $(call SetupJdkLibrary, BUILD_LIBINSTRUMENT, \
+     NAME := instrument, \
+     OPTIMIZATION := LOW, \
++    EXTRA_SRC := java.base:libtinyiconv, \
+     CFLAGS := $(CFLAGS_JDKLIB) $(LIBINSTRUMENT_CFLAGS), \
+     CFLAGS_debug := -DJPLIS_LOGGING, \
+     CFLAGS_release := -DNO_JPLIS_LOGGING, \
++    CXXFLAGS := $(CXXFLAGS_JDKLIB), \
+     DISABLED_WARNINGS_gcc := unused-function, \
+     EXTRA_HEADER_DIRS := java.base:libjli, \
+     LDFLAGS := $(LDFLAGS_JDKLIB) \
+diff --git a/make/modules/jdk.hotspot.agent/Lib.gmk b/make/modules/jdk.hotspot.agent/Lib.gmk
+index 59b24d0e4..d35dbfd17 100644
+--- a/make/modules/jdk.hotspot.agent/Lib.gmk
++++ b/make/modules/jdk.hotspot.agent/Lib.gmk
+@@ -74,6 +74,6 @@ $(eval $(call SetupJdkLibrary, BUILD_LIBSA, \
+     LIBS_windows := dbgeng.lib $(WIN_JAVA_LIB), \
+ ))
+ 
+-TARGETS += $(BUILD_LIBSA)
++# TARGETS += $(BUILD_LIBSA)
+ 
+ ################################################################################
+diff --git a/make/modules/jdk.jdwp.agent/Lib.gmk b/make/modules/jdk.jdwp.agent/Lib.gmk
+index aef358c14..7b9e5097c 100644
+--- a/make/modules/jdk.jdwp.agent/Lib.gmk
++++ b/make/modules/jdk.jdwp.agent/Lib.gmk
+@@ -52,12 +52,14 @@ $(eval $(call SetupJdkLibrary, BUILD_LIBJDWP, \
+     NAME := jdwp, \
+     OPTIMIZATION := LOW, \
+     CFLAGS := $(CFLAGS_JDKLIB) -DJDWP_LOGGING, \
++    CXXFLAGS := $(CXXFLAGS_JDKLIB), \
+     DISABLED_WARNINGS_gcc := unused-function, \
+     DISABLED_WARNINGS_clang := sometimes-uninitialized format-nonliteral \
+         self-assign, \
+     EXTRA_HEADER_DIRS := \
+       include \
+       libjdwp/export, \
++    EXTRA_SRC := java.base:libtinyiconv, \
+     LDFLAGS := $(LDFLAGS_JDKLIB) \
+         $(call SET_SHARED_LIBRARY_ORIGIN), \
+     LIBS := $(JDKLIB_LIBS), \
+diff --git a/make/modules/jdk.net/Lib.gmk b/make/modules/jdk.net/Lib.gmk
+index 3c9d1055f..e4260da69 100644
+--- a/make/modules/jdk.net/Lib.gmk
++++ b/make/modules/jdk.net/Lib.gmk
+@@ -27,7 +27,7 @@ include LibCommon.gmk
+ 
+ ################################################################################
+ 
+-ifeq ($(call isTargetOs, linux macosx windows), true)
++ifeq ($(call isTargetOs, linux macosx windows android), true)
+ 
+   $(eval $(call SetupJdkLibrary, BUILD_LIBEXTNET, \
+       NAME := extnet, \
+diff --git a/src/hotspot/cpu/arm/icache_arm.cpp b/src/hotspot/cpu/arm/icache_arm.cpp
+index 61fcb8a35..93d2ad4f4 100644
+--- a/src/hotspot/cpu/arm/icache_arm.cpp
++++ b/src/hotspot/cpu/arm/icache_arm.cpp
+@@ -31,7 +31,7 @@
+ 
+ 
+ static int icache_flush(address addr, int lines, int magic) {
+-  __builtin___clear_cache(addr, addr + (lines << ICache::log2_line_size));
++  __builtin___clear_cache((char*) addr, (char*) (addr + (lines << ICache::log2_line_size)));
+   return magic;
+ }
+ 

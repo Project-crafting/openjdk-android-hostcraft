@@ -1,0 +1,20 @@
+
+// Allow passing a custom resolv.conf path 
+
+diff --git a/src/java.base/unix/classes/sun/net/dns/ResolverConfigurationImpl.java b/src/java.base/unix/classes/sun/net/dns/ResolverConfigurationImpl.java
+index d46138f23..eadaf92a4 100644
+--- a/src/java.base/unix/classes/sun/net/dns/ResolverConfigurationImpl.java
++++ b/src/java.base/unix/classes/sun/net/dns/ResolverConfigurationImpl.java
+@@ -62,9 +62,11 @@ public class ResolverConfigurationImpl
+     {
+         LinkedList<String> ll = new LinkedList<>();
+ 
++        String resolvPath = System.getProperty("ext.net.resolvPath", "/etc/resolv.conf");
++
+         try {
+             BufferedReader in =
+-                new BufferedReader(new FileReader("/etc/resolv.conf"));
++                new BufferedReader(new FileReader(resolvPath));
+             String line;
+             while ((line = in.readLine()) != null) {
+                 int maxvalues = maxperkeyword;
