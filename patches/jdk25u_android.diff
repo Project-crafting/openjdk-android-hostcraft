@@ -39,15 +39,15 @@ diff --git a/make/autoconf/libraries.m4 b/make/autoconf/libraries.m4
 index a50ce5731..eb9545984 100644
 --- a/make/autoconf/libraries.m4
 +++ b/make/autoconf/libraries.m4
-@@ -43,6 +43,8 @@ AC_DEFUN_ONCE([LIB_DETERMINE_DEPENDENCIES],
+@@ -43,7 +43,8 @@ AC_DEFUN_ONCE([LIB_DETERMINE_DEPENDENCIES],
  [
    # Check if X11 is needed
--  if test "x$OPENJDK_TARGET_OS" = xwindows || test "x$OPENJDK_TARGET_OS" = xmacosx; then
--    # No X11 support on windows or macosx
+-  if test "x$OPENJDK_TARGET_OS" = xwindows ||
+-     test "x$OPENJDK_TARGET_OS" = xmacosx ||
 +  if test "x$OPENJDK_TARGET_OS" = xwindows ||
 +     test "x$OPENJDK_TARGET_OS" = xmacosx ||
 +     test "x$OPENJDK_TARGET_OS" = xandroid ||
-+     test "x$ENABLE_HEADLESS_ONLY" = xtrue; then
+      test "x$ENABLE_HEADLESS_ONLY" = xtrue; then
      NEEDS_LIB_X11=false
    else
 @@ -52,8 +52,8 @@ AC_DEFUN_ONCE([LIB_DETERMINE_DEPENDENCIES],
