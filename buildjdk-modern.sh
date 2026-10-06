@@ -118,7 +118,12 @@ else
 fi
 cd ..
 
-bash openjdk-$MAJOR/configure \
+# NOTE: configure must run from INSIDE the source tree (like Pojav/FCL):
+# it creates build/<conf>/ relative to the cwd. All paths handed to it
+# (FREETYPE/CUPS dirs, dummy_libs, TOOLCHAIN, BOOT_JDK) are absolute, so
+# changing directory here is safe.
+cd openjdk-$MAJOR
+bash ./configure \
     --with-boot-jdk=$BOOT_JDK \
     --openjdk-target=$TARGET \
     --with-extra-cflags="$CFLAGS" \
@@ -141,13 +146,13 @@ bash openjdk-$MAJOR/configure \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "\n\nCONFIGURE ERROR $error_code , config.log:"
-  cat openjdk-$MAJOR/config.log 2>/dev/null || cat config.log
+  cat config.log
   exit $error_code
 fi
 
 jobs=$(nproc)
 echo "Running ${jobs} jobs to build JDK $MAJOR"
-cd openjdk-$MAJOR/build/${JVM_PLATFORM}-${TARGET_JDK}-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
+cd build/${JVM_PLATFORM}-${TARGET_JDK}-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
 make JOBS=$jobs images || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
