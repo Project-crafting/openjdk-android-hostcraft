@@ -46,10 +46,13 @@ platform_args="--with-toolchain-type=gcc \
   --with-freetype-include=$FREETYPE_DIR/include/freetype2 \
   --with-freetype-lib=$FREETYPE_DIR/lib \
   "
-if [[ "$MAJOR" == "21" || "$MAJOR" == "25" ]]; then
-  platform_args+="--build=x86_64-unknown-linux-gnu \
-  "
-fi
+# The machine doing the building is always x86_64 Linux here (GitHub
+# runners, act containers). Spell it out: without --build, the x86 jobs
+# misdetect the BUILD triplet as i686, poisoning all HOST build-tools
+# defines (buildjdk hotspot compiled _LP64-without-AMD64) and failing
+# the build. (Pojav only passed this for 21/25; 17 needs it just as much.)
+platform_args+="--build=x86_64-unknown-linux-gnu \
+"
 platform_args+="OBJCOPY=${OBJCOPY} \
   RANLIB=${RANLIB} \
   AR=${AR} \
