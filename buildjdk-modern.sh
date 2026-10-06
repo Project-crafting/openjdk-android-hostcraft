@@ -106,8 +106,11 @@ PATCHDIR=$(cd .. && resolve_patch_dir)
 if [[ "$PATCHDIR" == FILE:* ]]; then
   apply_patch "../${PATCHDIR#FILE:}" "vendored jdk25u Android port (FCL-Team)"
 elif [[ -n "$PATCHDIR" ]]; then
+  # NOTE: find prints paths prefixed with the search root (../patches/...),
+  # already correct relative to our cwd inside openjdk-$MAJOR — do NOT
+  # prepend another ../ here (that produced '../../patches/...' misses).
   while IFS= read -r -d '' diff; do
-    apply_patch "../$diff" "upstream Android port $(basename "$diff")"
+    apply_patch "$diff" "upstream Android port $(basename "$diff")"
   done < <(find "../$PATCHDIR" -name "*.diff" -print0 | sort -z)
 else
   echo "FATAL: no Android patch set for JDK $MAJOR (run fetch-upstream-patches.sh or vendor patches/jre_$MAJOR/android/)"
