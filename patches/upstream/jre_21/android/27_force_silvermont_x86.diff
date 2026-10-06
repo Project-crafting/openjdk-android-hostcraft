@@ -1,0 +1,13 @@
+diff --git a/make/autoconf/flags-cflags.m4 b/make/autoconf/flags-cflags.m4
+--- a/make/autoconf/flags-cflags.m4
++++ b/make/autoconf/flags-cflags.m4
+@@ -793,5 +793,8 @@ AC_DEFUN([FLAGS_SETUP_CFLAGS_CPU_DEP],
+       else
+         # Force compatibility with i586 on 32 bit intel platforms.
+-        $1_CFLAGS_CPU="-march=i586"
++        # Android NDK clang removed i586, and a 32-bit-only -march also
++        # poisons the HOST build-tools compile (it inherits CFLAGS_CPU):
++        # Silvermont is 64-bit-capable, like buildjdk.sh already uses.
++        $1_CFLAGS_CPU="-march=silvermont"
+         AC_MSG_RESULT([no, forcing ${$1_CFLAGS_CPU}])
+       fi
