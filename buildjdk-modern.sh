@@ -27,11 +27,12 @@ fi
 if [[ "$TARGET_JDK" == "x86" ]]; then
   export CFLAGS+=" -mstackrealign"
   # OpenJDK defaults 32-bit x86 to -march=i586, which NDK clang removed
-  # ("error: unknown target CPU 'i586'"). Append the i686 baseline AFTER
-  # it via extra-cflags so ours wins on the command line — same override
-  # trick as -march=silvermont in buildjdk.sh (i686, not silvermont, to
-  # stay runnable on the oldest x86 devices).
-  export CFLAGS+=" -march=i686"
+  # ("error: unknown target CPU 'i586'"). Override via extra-cflags (later
+  # flag wins on the command line). Must be a 64-bit-capable CPU like the
+  # silvermont used by buildjdk.sh: these CFLAGS also leak into the HOST
+  # build-tools compile, where a 32-bit-only -march (e.g. i686) collides
+  # with 64-bit-only flags ("CPU you selected does not support x86-64").
+  export CFLAGS+=" -march=silvermont"
 fi
 
 export FREETYPE_DIR=$PWD/freetype-$BUILD_FREETYPE_VERSION/build_android-$TARGET_SHORT
