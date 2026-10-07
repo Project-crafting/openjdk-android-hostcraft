@@ -56,6 +56,33 @@ stays as a harmless fallback for old installs.
 - `verifyjre.sh` (CI `verify_all_packages`) asserts arch + embedded VM major
   + `release` agreement for every archive, including the new source-built ones.
 
+## Heap tagging must stay OFF (Oplus/ColorOS fixed-0xB4 tags abort HotSpot)
+
+- Some vendor ROMs (seen: Oplus/ColorOS port on Pixel XL, Android 11) enable
+  bionic heap pointer tagging at libc init with a fixed tag: `malloc` returns
+  `0xB4…` pointers and `free`/`realloc`/`malloc_usable_size` abort with
+  `Pointer tag for 0x… was truncated` on anything else. HotSpot's inline-cache
+  metadata path trips this on the VM thread at the first GC safepoint
+  (`release_pending_icholders` → `free`), killing every server ~2s after
+  `Starting …Main`. Reproduces with plain `System.gc()` + JIT (no MC needed);
+  `-XX:TieredStopAtLevel=0` / `-XX:-UseInlineCaches` dodge it but are not fixes.
+- Reference builds (aaaapai/FCL) carry `android_disable_tags()` in
+  `src/java.base/share/native/libjli/java.c` (`JLI_Launch` calls it): disables
+  tagging process-wide (`mallopt(M_BIONIC_SET_HEAP_TAGGING_LEVEL, 0)` on
+  API 31+, `android_mallopt(8, 0)` below). Our patch sets predated that hunk,
+  so it is backported here:
+  - 21: appended to `patches/upstream/jre_21/android/jdk21u_android.diff`
+    (verbatim hunk, verified `git apply --check` vs jdk21u tip).
+  - 17: `patches/upstream/jre_17/android/28_disable_heap_tagging.diff`
+    (same hunk verbatim, verified vs jdk17u).
+  - 25: appended to `patches/jdk25u_android.diff` (adapted: 25u already
+    includes `<stdbool.h>`; verified vs jdk25u).
+- The app never runs `bin/java` (in-process `JNI_CreateJavaVM` via
+  `app/src/main/cpp/jvmrunner.c`), so the launcher hunk alone is not enough:
+  `jvmrunner.c` disables tagging in a constructor (`jvmrunner_disable_heap_tags`,
+  same two-path logic) before any JVM allocation. Verified on-device: MC 1.21.11
+  on our JRE 21 boots to `Done` with zero tag aborts.
+
 ## Deliberate omissions vs FCL
 
 - `libawt_xawt.so` / `libjsound.so` APK-side replacement (`patchJava` in FCL):
